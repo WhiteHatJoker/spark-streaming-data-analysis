@@ -1,6 +1,7 @@
 package org.itpu;
 
 import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.MapFunction;
 import org.apache.spark.sql.*;
 import org.apache.spark.sql.types.DataTypes;
@@ -45,22 +46,7 @@ public class SparkStreaming {
                 .map(line -> line.split(","));
 
         // Process CSV data
-        csvInputData.foreachRDD(rdd -> {
-            SparkSession spark = SparkSession.builder().config(conf).getOrCreate();
-            Dataset<Row> csvDataFrame = spark.createDataFrame(rdd.map(row -> RowFactory.create((Object[]) row)), getSchema());
-
-            if (!csvDataFrame.isEmpty()) {
-                csvDataFrame = csvDataFrame.withColumn("avg_tmpr_c", col("avg_tmpr_c").cast(DataTypes.DoubleType))
-                        .withColumn("promo_cold_drinks", when(col("avg_tmpr_c").gt(25.0), true).otherwise(false));
-
-                writeStreamingOutput(OUTPUT_DIRECTORY, csvDataFrame);
-
-                System.out.println("Processed dataset is");
-                csvDataFrame.show();
-            } else {
-                System.out.println("For now the input stream is empty");
-            }
-        });
+        csvInputData.foreachRDD(this::processCSVData);
 
         jssc.start();
         try {
@@ -103,10 +89,26 @@ public class SparkStreaming {
         return new StructType(fields);
     }
 
+    private void processCSVData(JavaRDD<String[]> rdd) throws IOException {
+        SparkSession spark = SparkSession.builder().config(rdd.context().getConf()).getOrCreate();
+        Dataset<Row> csvDataFrame = spark.createDataFrame(rdd.map(row -> RowFactory.create((Object[]) row)), getSchema());
+
+        if (!csvDataFrame.isEmpty()) {
+            csvDataFrame = csvDataFrame.withColumn("avg_tmpr_c", col("avg_tmpr_c").cast(DataTypes.DoubleType))
+                    .withColumn("promo_cold_drinks", when(col("avg_tmpr_c").gt(25.0), true).otherwise(false));
+
+            writeStreamingOutput(OUTPUT_DIRECTORY, csvDataFrame);
+
+            System.out.println("Processed dataset is");
+            csvDataFrame.show();
+        } else {
+            System.out.println("For now the input stream is empty");
+        }
+    }
+
     private void writeStreamingOutput(String outputDirectory, Dataset<Row> csvDataFrame) throws IOException {
         File file = new File(outputDirectory);
         BufferedWriter writer = new BufferedWriter(new FileWriter(file, true));
-
 
         System.out.println("Writing data");
 
