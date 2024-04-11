@@ -45,6 +45,40 @@ public class SparkETL {
         return roundedLocation.drop(columnToDrop);
     }
 
+    public void printSampleOutput(Dataset<Row> finalData) {
+        System.out.println("Here's the schema:");
+        finalData.printSchema();
+        System.out.println("Here's the data:");
+        finalData.show();
+    }
+
+    public Dataset<Row> calculateOrderSize(Dataset<Row> realCostCalculated) {
+        Dataset<Row> dfWithOrderSize = realCostCalculated
+                .groupBy("restaurant_franchise_id", "receipt_id") // Group by franchise_id and receipt_id
+                .agg(first("id").alias("id"), // Preserve existing columns using 'first'
+                        first("franchise_id").alias("franchise_id"),
+                        first("franchise_name").alias("franchise_name"),
+                        first("restaurant_franchise_id").alias("restaurant_franchise_id"),
+                        first("country").alias("country"),
+                        first("city").alias("city"),
+                        first("lat").alias("lat"),
+                        first("lng").alias("lng"),
+                        first("date").alias("date"),
+                        round(avg("avg_tmpr_c"), 2).alias("avg_tmpr_c"), // Average temperature since it is all over different for the same day and location
+                        first("receipt_id").alias("receipt_id"),
+                        first("total_cost").alias("total_cost"),
+                        first("discount").alias("discount"),
+                        round(first("real_total_cost"), 2).alias("real_total_cost"),
+                        count("*").alias("items_count") // Count number of receipts
+                )
+                .withColumn("order_size", // Put order size name based on items count
+                        when(col("items_count").isNull().or(col("items_count").leq(0)), "Erroneous")
+                                .when(col("items_count").between(1, 3), "Small")
+                                .when(col("items_count").between(4, 10), "Medium")
+                                .otherwise("Large"));
+        return dfWithOrderSize;
+    }
+
 
     public void run() {
         System.out.println("Started Spark ETL! Give us a sec...");
@@ -56,17 +90,17 @@ public class SparkETL {
                 .config("spark.sql.session.timeZone", "UTC")
                 .getOrCreate();
 
-        // Step 1: Read the CSV file
+        // Step 3 - 4: Read the CSV file
         System.out.println("Reading CSV...");
         Dataset<Row> restaurants = readDatasetFromCsv(spark, RESTAURANTS_CSV_PATH);
         Dataset<Row> weather = readDatasetFromCsv(spark, WEATHER_CSV_PATH);
 
-        // Step 2: Cleanse, filter and format data
+        // Step 3 - 4: Cleanse, filter and format initial data
         System.out.println("Formatting data...");
         Dataset<Row> formattedRestaurants = formatData(restaurants, "date_time");
         Dataset<Row> formattedWeather = formatData(weather, "wthr_date");
 
-        // Step 3: Join on date and coordinates
+        // Step 5: Join two data sources on date and coordinates
         Dataset<Row> dfJoined = formattedRestaurants.as("r").join(formattedWeather.as("w"),
                 col("r.date").equalTo(col("w.date"))
                         .and(col("r.lat").equalTo(col("w.lat")))
@@ -81,22 +115,18 @@ public class SparkETL {
                 .drop(formattedWeather.col("city"))
                 .drop(formattedWeather.col("country"));
 
+        // Step 6: Filter the data by the average temperature
+        Dataset<Row> temperatureFiltered = curatedDataset.filter(col("avg_tmpr_c").gt(0));
 
-        // Step 6: Temperature filter
-        Dataset<Row> dfFiltered = curatedDataset.filter(col("avg_tmpr_c").gt(0));
+        // Step 7: Calculate real total cost, Group and populate 'order_size'
+        Dataset<Row> realCostCalculated = temperatureFiltered.withColumn("real_total_cost", col("total_cost").minus(col("total_cost").multiply(col("discount"))));
 
-        // Step 7: Calculate fields
-        Dataset<Row> dfCalc = dfFiltered
-                .withColumn("real_total_cost", col("total_cost").minus(col("total_cost").multiply(col("discount"))));
+        Dataset<Row> groupedOrderSizeCalculated = calculateOrderSize(realCostCalculated);
 
-        // Step 4: Output the result schema and result itself
-        System.out.println("Here's the schema:");
-        curatedDataset.printSchema();
-        System.out.println("Here's the data:");
-        curatedDataset.show();
+        // Print sample output
+        printSampleOutput(groupedOrderSizeCalculated);
 
-
-        // Step 5: Save the result to a new CSV file
+        // Step 9: Save the result to a new CSV file
         System.out.println("Writing final output CSV file...");
         curatedDataset.write()
                 .option("header", "true")
@@ -107,8 +137,6 @@ public class SparkETL {
         spark.stop();
         System.out.println("Operation was successful. You can find the CSV files in the output folder.");
         System.out.println("Done! :)");
-
-
 
 //
 //        // Order Size UDF
@@ -129,10 +157,10 @@ public class SparkETL {
 //                        count(when(col("order_size").equalTo("Medium"), true)).alias("medium_orders"),
 //                        count(when(col("order_size").equalTo("Large"), true)).alias("large_orders"))
 //                .withColumn("most_popular_order_type", first("order_size").over(window));
-//
-//        // Step 9: Store the result (adjust path)
-//        dfAggr.write().format("csv").option("header", true).mode("overwrite").save("path/to/result_data");
+
     }
+
+
 
     public static void main(String[] args) {
         new SparkETL().run();
