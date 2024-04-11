@@ -30,7 +30,7 @@ public class SparkStreaming {
     private final String CSV_HEADER_INITIAL = "receipt_id,id,franchise_id,franchise_name,country,city,lat,lng,avg_tmpr_c,total_cost,discount,real_total_cost,items_count,order_size,restaurant_franchise_id,date,erroneous_orders,tiny_orders,small_orders,medium_orders,large_orders,most_popular_order_type";
     private final String CSV_HEADER_FINAL = "receipt_id,id,franchise_id,franchise_name,country,city,lat,lng,avg_tmpr_c,total_cost,discount,real_total_cost,items_count,order_size,restaurant_franchise_id,date,erroneous_orders,tiny_orders,small_orders,medium_orders,large_orders,most_popular_order_type, promo_cold_drinks";
 
-    public void run() throws IOException {
+    public void run() {
         System.out.println("Started Spark Streaming! Give us a sec...");
 
         // Check and create output file if not exists
@@ -63,7 +63,7 @@ public class SparkStreaming {
         System.out.println("Done! :)");
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
         new SparkStreaming().run();
     }
 
