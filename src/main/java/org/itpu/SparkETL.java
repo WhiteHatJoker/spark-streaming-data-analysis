@@ -1,11 +1,6 @@
 package org.itpu;
 import org.apache.spark.sql.*;
-import org.apache.spark.sql.expressions.Window;
-import org.apache.spark.sql.expressions.WindowSpec;
 import static org.apache.spark.sql.functions.*;
-import org.apache.spark.api.java.function.MapFunction;
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder;
-
 
 public class SparkETL {
 
