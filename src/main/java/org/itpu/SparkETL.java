@@ -103,7 +103,7 @@ public class SparkETL {
         // Initialize Spark Session
         SparkSession spark = SparkSession.builder()
                 .appName("DataPrep")
-                .master("local[*]")
+                .master("local[2]")
                 .config("spark.sql.session.timeZone", "UTC")
                 .getOrCreate();
 

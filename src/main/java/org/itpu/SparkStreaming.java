@@ -1,7 +1,6 @@
 package org.itpu;
 
 import org.apache.spark.SparkConf;
-import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.MapFunction;
 import org.apache.spark.sql.*;
 import org.apache.spark.sql.types.DataTypes;
@@ -69,7 +68,7 @@ public class SparkStreaming {
 
 
         // Spark Streaming Context
-        SparkConf conf = new SparkConf().setMaster("local[*]").setAppName("DataStreaming");
+        SparkConf conf = new SparkConf().setMaster("local[2]").setAppName("DataStreaming");
         JavaStreamingContext jssc = new JavaStreamingContext(conf, Durations.seconds(5));
 
         // DStream that monitors input directory
