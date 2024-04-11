@@ -25,50 +25,16 @@ public class SparkStreaming {
     private final String INPUT_DIRECTORY = "./streamingfiles/input";
     private final String OUTPUT_DIRECTORY = "./streamingfiles/output/result.csv";
 
+    private final String CSV_HEADER_INITIAL = "receipt_id,id,franchise_id,franchise_name,country,city,lat,lng,avg_tmpr_c,total_cost,discount,real_total_cost,items_count,order_size,restaurant_franchise_id,date,erroneous_orders,tiny_orders,small_orders,medium_orders,large_orders,most_popular_order_type";
+    private final String CSV_HEADER_FINAL = "receipt_id,id,franchise_id,franchise_name,country,city,lat,lng,avg_tmpr_c,total_cost,discount,real_total_cost,items_count,order_size,restaurant_franchise_id,date,erroneous_orders,tiny_orders,small_orders,medium_orders,large_orders,most_popular_order_type, promo_cold_drinks";
+
     public void run() throws IOException {
         System.out.println("Started Spark Streaming! Give us a sec...");
 
-
-        String csvHeaderInitial = "receipt_id,id,franchise_id,franchise_name,country,city,lat,lng,avg_tmpr_c,total_cost,discount,real_total_cost,items_count,order_size,restaurant_franchise_id,date,erroneous_orders,tiny_orders,small_orders,medium_orders,large_orders,most_popular_order_type";
-        String csvHeaderFinal = "receipt_id,id,franchise_id,franchise_name,country,city,lat,lng,avg_tmpr_c,total_cost,discount,real_total_cost,items_count,order_size,restaurant_franchise_id,date,erroneous_orders,tiny_orders,small_orders,medium_orders,large_orders,most_popular_order_type, promo_cold_drinks";
-
-        String[] columnNames = csvHeaderInitial.split(",");
-        StructField[] fields = new StructField[columnNames.length];
-
-        for(int i = 0; i < columnNames.length; i++) {
-            fields[i] = DataTypes.createStructField(columnNames[i], DataTypes.StringType, true);
-        }
-
-        StructType schema = new StructType(fields);
-
-
-
-        File outPutFile = new File(OUTPUT_DIRECTORY);
-        BufferedWriter writer = null;
-        try {
-            writer = new BufferedWriter(new FileWriter(outPutFile, true));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        if((!outPutFile.exists()) || (outPutFile.length() == 0)) {
-            try {
-                outPutFile.createNewFile();
-                writer.write(csvHeaderFinal);
-                writer.newLine();
-                writer.close();
-                System.out.println("New output file created!");
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        } else {
-            System.out.println("Output file already exists!");
-        }
-
-
+        createOutputFileIfNotExists();
 
         // Spark Streaming Context
-        SparkConf conf = new SparkConf().setMaster("local[2]").setAppName("DataStreaming");
+        SparkConf conf = new SparkConf().setMaster("local[*]").setAppName("DataStreaming");
         JavaStreamingContext jssc = new JavaStreamingContext(conf, Durations.seconds(5));
 
         // DStream that monitors input directory
@@ -81,7 +47,7 @@ public class SparkStreaming {
         // Process CSV data
         csvInputData.foreachRDD(rdd -> {
             SparkSession spark = SparkSession.builder().config(conf).getOrCreate();
-            Dataset<Row> csvDataFrame = spark.createDataFrame(rdd.map(row -> RowFactory.create((Object[]) row)), schema);
+            Dataset<Row> csvDataFrame = spark.createDataFrame(rdd.map(row -> RowFactory.create((Object[]) row)), getSchema());
 
             if (!csvDataFrame.isEmpty()) {
                 csvDataFrame = csvDataFrame.withColumn("avg_tmpr_c", col("avg_tmpr_c").cast(DataTypes.DoubleType))
@@ -109,6 +75,32 @@ public class SparkStreaming {
 
     public static void main(String[] args) throws IOException {
         new SparkStreaming().run();
+    }
+
+    private void createOutputFileIfNotExists() {
+        File outputFile = new File(OUTPUT_DIRECTORY);
+        if ((!outputFile.exists()) || (outputFile.length() == 0)) {
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile, true))) {
+                writer.write(CSV_HEADER_FINAL);
+                writer.newLine();
+                System.out.println("New output file created!");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        } else {
+            System.out.println("Output file already exists!");
+        }
+    }
+
+    private StructType getSchema() {
+        String[] columnNames = CSV_HEADER_INITIAL.split(",");
+        StructField[] fields = new StructField[columnNames.length];
+
+        for (int i = 0; i < columnNames.length; i++) {
+            fields[i] = DataTypes.createStructField(columnNames[i], DataTypes.StringType, true);
+        }
+
+        return new StructType(fields);
     }
 
     private void writeStreamingOutput(String outputDirectory, Dataset<Row> csvDataFrame) throws IOException {
