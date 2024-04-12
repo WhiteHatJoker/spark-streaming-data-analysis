@@ -34,7 +34,7 @@ public class SparkStreaming {
         System.out.println("Started Spark Streaming! Give us a sec...");
 
         // Check and create output file if not exists
-        createOutputFileIfNotExists();
+        createOutputFileIfNotExists(OUTPUT_DIRECTORY);
 
         // Spark Streaming Context setup
         SparkConf conf = new SparkConf().setMaster("local[*]").setAppName("DataStreaming");
@@ -69,8 +69,8 @@ public class SparkStreaming {
 
 
     // Method to create output file if not exists
-    private void createOutputFileIfNotExists() {
-        File outputFile = new File(OUTPUT_DIRECTORY);
+    public void createOutputFileIfNotExists(String path) {
+        File outputFile = new File(path);
         if ((!outputFile.exists()) || (outputFile.length() == 0)) {
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile, true))) {
                 writer.write(CSV_HEADER_FINAL);
@@ -85,7 +85,7 @@ public class SparkStreaming {
     }
 
     // Method to define schema based on CSV header
-    private StructType getSchema() {
+    public StructType getSchema() {
         String[] columnNames = CSV_HEADER_INITIAL.split(",");
         StructField[] fields = new StructField[columnNames.length];
 
