@@ -45,7 +45,7 @@ public class SparkETLTest {
         Dataset<Row> formattedData = sparkETL.formatData(unformattedData, "date_time");
         assertNotNull(formattedData, "");
         assertEquals(3, formattedData.count(), "Only rows with date in 2022 should be left");
-        assertTrue(formattedData.columns()[11].equals("date"), "The date column was added");
+        assertEquals("date", formattedData.columns()[11], "The date column was added");
         assertEquals(3, formattedData.select(col("date")).distinct().count(),
                 "The datetime column should be cast to date");
 
@@ -58,11 +58,14 @@ public class SparkETLTest {
     @Test
     public void testCalculateOrderSize() {
         SparkETL sparkETL = new SparkETL();
-        Dataset<Row> uncalculatedData = sparkETL.readDatasetFromCsv(spark, "src/test/resources/test.csv");
+        Dataset<Row> uncalculatedData = sparkETL.readDatasetFromCsv(spark, "src/test/resources/testOrderSize.csv");
         Dataset<Row> calculatedData = sparkETL.calculateOrderSize(uncalculatedData);
         assertNotNull(calculatedData);
-        assertTrue(calculatedData.columns().length > 0);
-        assertTrue(calculatedData.columns()[calculatedData.columns().length - 1].equals("order_size"));
+        assertEquals(3, calculatedData.count(), "Rows should be grouped by restaurant_franchise_id and receipt_id");
+        assertEquals("items_count", calculatedData.columns()[calculatedData.columns().length - 2],"items_count column should be added");
+        assertEquals("order_size", calculatedData.columns()[calculatedData.columns().length - 1],"order_size column should be added");
+        assertEquals(3, calculatedData.select(col("order_size")).distinct().count(),
+                "3 distinct types should be for order_size column");
     }
 
     @Test
