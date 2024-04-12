@@ -71,10 +71,16 @@ public class SparkETLTest {
     @Test
     public void testCalcateOrderTypesPerRestaurantDates() {
         SparkETL sparkETL = new SparkETL();
-        Dataset<Row> uncalculatedData = sparkETL.readDatasetFromCsv(spark, "src/test/resources/test.csv");
+        Dataset<Row> uncalculatedData = sparkETL.readDatasetFromCsv(spark, "src/test/resources/testOrderTypes.csv");
         Dataset<Row> calculatedData = sparkETL.calcateOrderTypesPerRestaurantDates(uncalculatedData);
         assertNotNull(calculatedData);
-        assertTrue(calculatedData.columns().length > 0);
-        assertTrue(calculatedData.columns()[calculatedData.columns().length - 1].equals("most_popular_order_type"));
+        assertEquals(1, calculatedData.count(), "Rows should be grouped by restaurant_franchise_id and date");
+
+        assertEquals("most_popular_order_type", calculatedData.columns()[calculatedData.columns().length - 1],"most_popular_order_type column should be added");
+        assertEquals(1, calculatedData.select(col("most_popular_order_type")).distinct().count(),
+                "1 distinct types should be for order_size column");
+
+        String mostPopularOrderType = calculatedData.select(col("most_popular_order_type")).head().getString(0);
+        assertEquals("Tiny", mostPopularOrderType, "Incorrect value for most_popular_order_type");
     }
 }
