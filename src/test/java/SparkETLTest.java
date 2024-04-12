@@ -2,11 +2,15 @@
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
+import org.itpu.SparkStreaming;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.itpu.SparkETL;
 
+import java.io.File;
 import java.util.Arrays;
 
 import static org.apache.spark.sql.functions.col;
@@ -16,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class SparkETLTest {
 
     private static SparkSession spark;
+    private final String TEST_OUTPUT_FOLDER = "./streamingfiles/test_output/result.csv";
 
     @BeforeAll
     public static void setUp() {
@@ -82,5 +87,32 @@ public class SparkETLTest {
 
         String mostPopularOrderType = calculatedData.select(col("most_popular_order_type")).head().getString(0);
         assertEquals("Tiny", mostPopularOrderType, "Incorrect value for most_popular_order_type");
+    }
+
+
+    @Test
+    void testCreateOutputFileIfNotExists() {
+        SparkStreaming sparkStreaming = new SparkStreaming();
+        File outputFile = new File(TEST_OUTPUT_FOLDER);
+
+        sparkStreaming.createOutputFileIfNotExists(TEST_OUTPUT_FOLDER);
+        assertTrue(outputFile.exists());
+        assertTrue(outputFile.length() > 0);
+    }
+
+    @Test
+    void testGetSchema() {
+        SparkStreaming sparkStreaming = new SparkStreaming();
+        String expectedSchema = "receipt_id,id,franchise_id,franchise_name,country,city,lat,lng,avg_tmpr_c,total_cost,discount,real_total_cost,items_count,order_size,restaurant_franchise_id,date,erroneous_orders,tiny_orders,small_orders,medium_orders,large_orders,most_popular_order_type,";
+
+        StructType schema = sparkStreaming.getSchema();
+        assertNotNull(schema);
+
+        // Check if the generated schema matches the expected schema
+        StringBuilder actualSchema = new StringBuilder();
+        for (StructField field : schema.fields()) {
+            actualSchema.append(field.name()).append(",");
+        }
+        assertEquals(expectedSchema, actualSchema.toString());
     }
 }
