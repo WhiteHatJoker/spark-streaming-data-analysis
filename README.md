@@ -1,55 +1,104 @@
-This application runs transformations on restaurant and weather CSV data files and presents final data in CSV. 
-The application has two main classes so it needs to be run in the following order:
-1. [SparkETL.java](./src/main/java/org/itpu/SparkETL.java). This class needs to be run first to generate the CSV files into [output folder](./output)
-2. [SparkStreaming.java](./src/main/java/org/itpu/SparkStreaming.java). This class needs to be run second ASAP after CSV files were generated. We need to instantly move generated CSV file from [output folder](./output) to [streamingfiles/input folder](./streamingfiles/input). Please note the file needs to be newly created just now otherwise it won't be read by Spark Streaming. In case, it doesn't read the file you need to change the moved file dates to current datetime. 
-Finally, you should get the output into [result.csv file](./streamingfiles/output/result.csv). All the newly created files that arrive into [streamingfiles/input folder](./streamingfiles/input) will be read and appended to one file - [result.csv file](./streamingfiles/output/result.csv).
+# Restaurant Orders ETL and Streaming with Apache Spark
 
-# Requirements
-1. Project requirements are present in Maven pom.xml file
-- Spark Core 3.5.1
-- Spark SQL 3.5.1
-- Spark Streaming 3.5.1
-- JUnit Jupiter v5.10.2
-2. The project is set up to run on JDK 17
-3. There are important run configurations specific to JDK 17 and Spark 3.5.1. Without them, the project might return errors on Java 17.
+A two-stage data pipeline in Java and Apache Spark. A batch ETL job joins restaurant receipts with daily weather, calculates real order costs, classifies orders by size, and finds each restaurant's most popular order type per day. A Spark Streaming job then watches a folder for new results, flags days warm enough for a cold-drinks promotion, and appends them to a running output file.
 
-   ![SparkETL Configuration](./screenshots/config1.png "SparkETL Run Config")
-   ![SparkStreaming Configuration](./screenshots/config2.png "SparkStreaming Run Config")
-   ![JUnit Configuration](./screenshots/config3.png "JUnit Config")
+![Java](https://img.shields.io/badge/Java-17-orange) ![Spark](https://img.shields.io/badge/Apache%20Spark-3.5.1%20(SQL%20%2B%20Streaming)-e25a1c) ![JUnit](https://img.shields.io/badge/Tests-JUnit%205-25a162)
 
-So you need to add `--add-exports java.base/sun.nio.ch=ALL-UNNAMED` VM options to both classes and JUnit.
+## Pipeline
 
-or you can simply import [Run Configurations](.run/) into your Intellij IDEA instead.
+```
+restaurant_csv/ (receipts) ──┐
+                             ├─► SparkETL ──► output/*.csv ──copy──► streamingfiles/input/
+weather_csv/ (daily temps) ──┘                                              │
+                                                                            ▼
+                                             SparkStreaming (polls every 5 s) ──► streamingfiles/output/result.csv
+```
 
-# Project Structure
-- `output/` folder contains the result of running SparkETL.java
-- `streamingfiles/input/` folder contains the input files for SparkStreaming.java
-- `streamingfiles/output/` folder contains the result.csv file - the result of running SparkStreaming.java
-- `src/main/` folder contains the main application logic code
-- `src/main/resources/` folder contains the CSV files to read or input files for weather and restaurants for SparkETL.java.
-- `src/test/` folder contains JUnit tests for our application
-- `screenshots/` folder contains just pictures for reporting
-- `pom.xml` contains the project library requirements
-- `.run/` contains the project run configurations
+### Stage 1: batch ETL (`SparkETL`)
 
-# Running
+1. **Read** receipts and weather from CSV.
+2. **Format** both sources: keep only 2022 records, convert timestamps to dates, round coordinates to 2 decimals so the two sources line up.
+3. **Join** receipts to weather on date, latitude and longitude (inner join), then drop the duplicate columns.
+4. **Filter** to days with an average temperature above 0 °C.
+5. **Calculate** the real total cost after discount: `total_cost − total_cost × discount`.
+6. **Classify** each order by item count:
 
-1. Once the above requirements were met, you can run the following class [SparkETL.java](./src/main/java/org/itpu/SparkETL.java) first.
-Since it is a Spark application, you might need to wait a bit after running before you get a message as shown below. Then you can go to
-[Output folder](./output) to see the generated CSV files.
+   | Items | Order size |
+   |-------|------------|
+   | 0 or missing | Erroneous |
+   | 1 | Tiny |
+   | 2–3 | Small |
+   | 4–10 | Medium |
+   | 11+ | Large |
 
-![Success Message](./screenshots/DataPrep.png "Success Message")
+7. **Aggregate** per restaurant per day: the count of each order size, plus `most_popular_order_type`.
+8. **Write** the result as CSV to `output/`.
 
-2. Then, you can run the following class [SparkStreaming.java](./src/main/java/org/itpu/SparkStreaming.java).
-3. Further, you can quickly drop the generated file to [streamingfiles/input folder](./streamingfiles/input) or update data metadata in existing CSV file.
-Main idea is that Spark Streaming should think it is a new file created few seconds ago. Finally, you should get [result.csv file](./streamingfiles/output/result.csv) get updated with freshest information.
-New data gets appended to the file so you need to open it to see the update.
+### Stage 2: streaming (`SparkStreaming`)
 
-![Success Message](./screenshots/SparkStreaming.png "Success Message")
+- A `JavaStreamingContext` with a 5-second batch interval watches `streamingfiles/input/` for new files.
+- Each new batch is parsed, `avg_tmpr_c` is cast to a number, and a `promo_cold_drinks` column is added: `true` when the day's average temperature is above 25 °C.
+- Results are appended to `streamingfiles/output/result.csv`, which is created with a header on first run.
 
-# Tests
+## Run it
 
-You can run tests in [SparkETLTest](./src/test/java/SparkETLTest.java).
+Requirements: JDK 17 and Maven.
 
-![Test Success Message](./screenshots/SparkTest.png "Tes Success Message")
+Spark 3.5 on Java 17 needs one extra JVM flag:
 
+```
+--add-exports java.base/sun.nio.ch=ALL-UNNAMED
+```
+
+The IntelliJ IDEA run configurations in `.run/` already include it.
+
+![Run configuration](./screenshots/config1.png)
+
+**1. Run the ETL job**
+
+Run `org.itpu.SparkETL` (or, from the command line):
+
+```bash
+MAVEN_OPTS="--add-exports java.base/sun.nio.ch=ALL-UNNAMED" \
+  mvn compile exec:java -Dexec.mainClass=org.itpu.SparkETL
+```
+
+CSV files appear in `output/`.
+
+![ETL output](./screenshots/DataPrep.png)
+
+**2. Start the streaming job**
+
+Run `org.itpu.SparkStreaming`. It prints "For now the input stream is empty" every 5 seconds while it waits.
+
+**3. Feed it data**
+
+Copy a CSV file from `output/` into `streamingfiles/input/`. Spark Streaming only picks up files that are newly created, so copy the file rather than moving an old one, or `touch` it to update its timestamp. Within a few seconds the rows are processed and appended to `streamingfiles/output/result.csv`.
+
+![Streaming output](./screenshots/SparkStreaming.png)
+
+## Tests
+
+`SparkETLTest` (JUnit 5, local Spark session) covers CSV reading, formatting, order-size classification, per-restaurant aggregation, output file creation and the streaming schema.
+
+```bash
+mvn test -DargLine="--add-exports java.base/sun.nio.ch=ALL-UNNAMED"
+```
+
+![Test results](./screenshots/SparkTest.png)
+
+## Project structure
+
+```
+src/main/java/org/itpu/SparkETL.java        Batch stage: join, cost, order size, aggregation
+src/main/java/org/itpu/SparkStreaming.java  Streaming stage: folder watch, promo flag, append
+src/test/java/SparkETLTest.java             JUnit 5 tests
+src/main/resources/                         Input receipts and weather CSVs
+output/                                     Sample ETL output
+streamingfiles/input/, streamingfiles/output/  Sample streaming input and result
+.run/                                       IntelliJ run configs with the JVM flag
+```
+
+---
+
+Built as a data engineering assignment at ITPU. Author: Ravshan Khudoyberdiev.
